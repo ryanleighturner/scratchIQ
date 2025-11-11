@@ -62,6 +62,9 @@ class NCLotteryScraper {
             const idEl = card.querySelector('.game-id, [class*="game-number"]');
             const linkEl = card.querySelector('a[href*="scratch"], a[href*="game"]');
 
+            // NEW: Extract ticket image
+            const imageEl = card.querySelector('img, [class*="ticket-image"], [class*="game-image"]');
+
             if (nameEl && priceEl) {
               const name = nameEl.textContent.trim();
               const priceText = priceEl.textContent.trim();
@@ -76,12 +79,23 @@ class NCLotteryScraper {
 
               const url = linkEl ? linkEl.href : null;
 
+              // Get image URL
+              let imageUrl = null;
+              if (imageEl) {
+                imageUrl = imageEl.src || imageEl.getAttribute('data-src');
+                // Make sure it's absolute URL
+                if (imageUrl && !imageUrl.startsWith('http')) {
+                  imageUrl = `https://nclottery.com${imageUrl}`;
+                }
+              }
+
               if (price > 0 && url) {
                 results.push({
                   id: gameId || `game-${index}`,
                   name,
                   price: price.toFixed(2),
-                  url: url.startsWith('http') ? url : `https://nclottery.com${url}`
+                  url: url.startsWith('http') ? url : `https://nclottery.com${url}`,
+                  image_url: imageUrl
                 });
               }
             }
@@ -123,10 +137,11 @@ class NCLotteryScraper {
       // Wait for prize table
       await page.waitForSelector('table, .prize-table, [class*="prize"]', { timeout: 5000 });
 
-      // Extract prize data
-      const prizes = await page.evaluate(() => {
+      // Extract prize data and ticket image from detail page
+      const pageData = await page.evaluate(() => {
+        // Get prizes
         const rows = document.querySelectorAll('table tr, .prize-row, [class*="prize-item"]');
-        const results = [];
+        const prizes = [];
 
         rows.forEach(row => {
           try {
@@ -143,7 +158,7 @@ class NCLotteryScraper {
               const remainingNum = parseInt(remaining.replace(/[^0-9]/g, '')) || 0;
 
               if (prizeAmt && totalNum > 0) {
-                results.push({
+                prizes.push({
                   prize_amt: prizeAmt,
                   total: totalNum,
                   remaining: remainingNum
@@ -155,20 +170,28 @@ class NCLotteryScraper {
           }
         });
 
-        return results;
-      });
-
-      // Try to extract game odds for better ticket estimation
-      const oddsInfo = await page.evaluate(() => {
+        // Get odds info
         const oddsEl = document.querySelector('[class*="odds"], .game-odds, .overall-odds');
-        return oddsEl ? oddsEl.textContent.trim() : null;
+        const oddsInfo = oddsEl ? oddsEl.textContent.trim() : null;
+
+        // Get ticket image (might be larger/better quality on detail page)
+        const detailImageEl = document.querySelector('.ticket-image, .game-detail-image, img[class*="ticket"], img[alt*="ticket"]');
+        let imageUrl = null;
+        if (detailImageEl) {
+          imageUrl = detailImageEl.src || detailImageEl.getAttribute('data-src');
+          if (imageUrl && !imageUrl.startsWith('http')) {
+            imageUrl = window.location.origin + imageUrl;
+          }
+        }
+
+        return { prizes, oddsInfo, imageUrl };
       });
 
-      return { prizes, oddsInfo };
+      return pageData;
 
     } catch (error) {
       console.error(`Error scraping prize data for ${gameUrl}:`, error.message);
-      return { prizes: [], oddsInfo: null };
+      return { prizes: [], oddsInfo: null, imageUrl: null };
     }
   }
 
@@ -208,7 +231,7 @@ class NCLotteryScraper {
         const game = games[i];
         console.log(`Scraping ${i + 1}/${games.length}: ${game.name}`);
 
-        const { prizes, oddsInfo } = await this.scrapePrizeData(page, game.url);
+        const { prizes, oddsInfo, imageUrl } = await this.scrapePrizeData(page, game.url);
 
         if (prizes.length > 0) {
           // Calculate EV and other metrics
@@ -218,8 +241,12 @@ class NCLotteryScraper {
           const hot = isHotTicket(ev);
           const valueScore = calculateValueScore(ev, topPrizeInfo, price);
 
+          // Use detail page image if available, otherwise use listing image
+          const finalImageUrl = imageUrl || game.image_url;
+
           results.push({
             ...game,
+            image_url: finalImageUrl, // Ensure we have the best image URL
             prizes,
             odds_info: oddsInfo,
             ev,

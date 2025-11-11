@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Linking,
+  Image,
 } from 'react-native';
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
@@ -111,6 +112,15 @@ export default function GameDetailScreen({ route, navigation }) {
           <View style={styles.hotBadge}>
             <Text style={styles.hotBadgeText}>🔥 HOT TICKET</Text>
           </View>
+        )}
+
+        {/* Large Ticket Image */}
+        {game.image_url && (
+          <Image
+            source={{ uri: game.image_url }}
+            style={styles.ticketImageLarge}
+            resizeMode="contain"
+          />
         )}
 
         <Text style={styles.gameName}>{game.name}</Text>
@@ -259,6 +269,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff5f0',
     borderBottomWidth: 3,
     borderBottomColor: '#FF5722',
+  },
+  ticketImageLarge: {
+    width: '100%',
+    height: 250,
+    borderRadius: 12,
+    marginBottom: 16,
+    backgroundColor: '#f0f0f0',
   },
   hotBadge: {
     backgroundColor: '#FF5722',

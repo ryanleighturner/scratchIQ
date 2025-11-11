@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS games (
   value_score INTEGER,
   odds_info TEXT,
   url TEXT,
+  image_url TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -125,11 +126,18 @@ CREATE TRIGGER update_user_preferences_updated_at BEFORE UPDATE ON user_preferen
 -- Uncomment to add sample game for development
 
 /*
-INSERT INTO games (id, name, price, state, ev, top_prize_amount, top_prize_remaining, is_hot, value_score, url)
+-- Sample data with placeholder ticket images
+INSERT INTO games (id, name, price, state, ev, top_prize_amount, top_prize_remaining, is_hot, value_score, url, image_url)
 VALUES
-  ('game-1001', '$1,000,000 Jackpot', 20.00, 'nc', 0.75, 1000000, 3, TRUE, 85, 'https://nclottery.com/game-1001'),
-  ('game-1002', 'Triple 777', 5.00, 'nc', 0.65, 77777, 15, FALSE, 72, 'https://nclottery.com/game-1002'),
-  ('game-1003', 'Cash Explosion', 10.00, 'nc', 0.72, 500000, 5, TRUE, 80, 'https://nclottery.com/game-1003');
+  ('game-1001', '$1,000,000 Jackpot', 20.00, 'nc', 0.75, 1000000, 3, TRUE, 85,
+   'https://nclottery.com/game-1001',
+   'https://nclottery.com/images/scratchers/1001.jpg'),
+  ('game-1002', 'Triple 777', 5.00, 'nc', 0.65, 77777, 15, FALSE, 72,
+   'https://nclottery.com/game-1002',
+   'https://nclottery.com/images/scratchers/1002.jpg'),
+  ('game-1003', 'Cash Explosion', 10.00, 'nc', 0.72, 500000, 5, TRUE, 80,
+   'https://nclottery.com/game-1003',
+   'https://nclottery.com/images/scratchers/1003.jpg');
 
 INSERT INTO prizes (game_id, prize_amt, total, remaining, prize_rank)
 VALUES

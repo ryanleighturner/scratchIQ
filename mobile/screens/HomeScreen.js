@@ -13,6 +13,7 @@ import {
   RefreshControl,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
@@ -142,6 +143,15 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.hotBadge}>
             <Text style={styles.hotBadgeText}>🔥 HOT</Text>
           </View>
+        )}
+
+        {/* Ticket Image */}
+        {item.image_url && (
+          <Image
+            source={{ uri: item.image_url }}
+            style={styles.ticketImage}
+            resizeMode="contain"
+          />
         )}
 
         <View style={styles.gameHeader}>
@@ -348,6 +358,13 @@ const styles = StyleSheet.create({
   gameCardHot: {
     borderWidth: 2,
     borderColor: '#FF5722',
+  },
+  ticketImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 8,
+    marginBottom: 12,
+    backgroundColor: '#f0f0f0',
   },
   hotBadge: {
     position: 'absolute',
