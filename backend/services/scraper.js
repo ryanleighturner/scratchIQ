@@ -8,8 +8,7 @@ const { chromium } = require('playwright');
 const { calculateEV, getTopPrizeInfo, isHotTicket, calculateValueScore } = require('../utils/evCalculator');
 
 class NCLotteryScraper {
-  constructor(browserbaseApiKey, options = {}) {
-    this.browserbaseApiKey = browserbaseApiKey;
+  constructor(options = {}) {
     this.baseUrl = 'https://nclottery.com';
     this.scrapeDelay = options.scrapeDelay || 2000;
     this.maxGames = options.maxGames || 20;
@@ -17,34 +16,21 @@ class NCLotteryScraper {
   }
 
   /**
-   * Initialize Browserbase session
+   * Initialize local Playwright browser
    */
   async initBrowser() {
     try {
-      // For Browserbase, you'd typically use their SDK to get a connection URL
-      // This is a simplified version - adjust based on Browserbase's actual API
-      const Browserbase = require('browserbase');
-      const client = new Browserbase(this.browserbaseApiKey);
-
-      const session = await client.sessions.create({
-        headless: this.headless,
-        proxyCountry: 'US',
-        browserSettings: {
-          userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-      });
-
-      const browser = await chromium.connectOverCDP(session.connectUrl);
-
-      return { browser, session, client };
-    } catch (error) {
-      console.error('Browserbase initialization failed, using local Playwright:', error.message);
-      // Fallback to local Playwright for development
+      console.log('Launching local Playwright browser...');
       const browser = await chromium.launch({
         headless: this.headless,
         args: ['--no-sandbox', '--disable-setuid-sandbox']
       });
-      return { browser, session: null, client: null };
+
+      console.log('✓ Browser launched successfully');
+      return { browser };
+    } catch (error) {
+      console.error('Failed to launch browser:', error.message);
+      throw error;
     }
   }
 
@@ -190,19 +176,20 @@ class NCLotteryScraper {
    * Main scrape function - orchestrates the full scrape process
    */
   async scrapeAllGames() {
-    let browserContext = null;
+    let browser = null;
 
     try {
       console.log('Starting NC Lottery scrape...');
-      browserContext = await this.initBrowser();
-      const { browser, session } = browserContext;
+      const browserContext = await this.initBrowser();
+      browser = browserContext.browser;
 
       const page = await browser.newPage();
 
       // Set realistic headers
       await page.setExtraHTTPHeaders({
         'Accept-Language': 'en-US,en;q=0.9',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       });
 
       // Step 1: Get games list
@@ -210,6 +197,7 @@ class NCLotteryScraper {
 
       if (games.length === 0) {
         console.log('No games found - site structure may have changed');
+        await browser.close();
         return [];
       }
 
@@ -252,19 +240,16 @@ class NCLotteryScraper {
 
       // Cleanup
       await browser.close();
-      if (session && browserContext.client) {
-        await browserContext.client.sessions.delete(session.id);
-      }
 
-      console.log(`Scrape completed: ${results.length} games with prize data`);
+      console.log(`✓ Scrape completed: ${results.length} games with prize data`);
       return results;
 
     } catch (error) {
-      console.error('Fatal error during scrape:', error);
+      console.error('✗ Fatal error during scrape:', error);
 
       // Cleanup on error
-      if (browserContext?.browser) {
-        await browserContext.browser.close();
+      if (browser) {
+        await browser.close().catch(() => {});
       }
 
       return [];
@@ -278,8 +263,9 @@ module.exports = NCLotteryScraper;
 // Allow running as standalone script
 if (require.main === module) {
   (async () => {
-    const scraper = new NCLotteryScraper(process.env.BROWSERBASE_API_KEY, {
-      maxGames: process.env.MAX_GAMES_PER_SCRAPE || 20
+    const scraper = new NCLotteryScraper({
+      maxGames: process.env.MAX_GAMES_PER_SCRAPE || 20,
+      headless: true
     });
 
     const results = await scraper.scrapeAllGames();

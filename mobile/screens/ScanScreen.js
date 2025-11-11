@@ -18,7 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Camera } from 'expo-camera';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import Tesseract from 'tesseract.js';
+import * as FileSystem from 'expo-file-system';
 import { API_BASE_URL, FREE_TIER_SCANS } from '../config';
 
 export default function ScanScreen({ navigation }) {
@@ -128,72 +128,86 @@ export default function ScanScreen({ navigation }) {
       setProcessing(true);
       setDetectedGames([]);
 
-      // Run OCR on the image
-      const { data: { text } } = await Tesseract.recognize(imageUri, 'eng', {
-        logger: (m) => {
-          if (m.status === 'recognizing text') {
-            console.log(`OCR Progress: ${(m.progress * 100).toFixed(0)}%`);
-          }
-        },
-      });
+      const userId = await AsyncStorage.getItem('userId');
+      const userState = await AsyncStorage.getItem('userState');
 
-      console.log('OCR Text:', text);
+      // Create FormData for multipart upload
+      const formData = new FormData();
 
-      // Extract game IDs (typically 4-digit numbers)
-      const gameIdPattern = /\b\d{4}\b/g;
-      const gameIds = text.match(gameIdPattern) || [];
+      // Get file info
+      const fileInfo = await FileSystem.getInfoAsync(imageUri);
 
-      // Also look for game names and prices
-      const pricePattern = /\$\d+/g;
-      const prices = text.match(pricePattern) || [];
+      // Create file blob for upload
+      const file = {
+        uri: imageUri,
+        type: 'image/jpeg',
+        name: 'lottery-scan.jpg'
+      };
 
-      if (gameIds.length === 0) {
+      formData.append('image', file);
+      formData.append('userId', userId);
+      formData.append('state', userState);
+
+      console.log('Uploading image to Gemini AI...');
+
+      // Send to backend for Gemini processing
+      const response = await axios.post(
+        `${API_BASE_URL}/scan/image`,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+          timeout: 30000 // 30 second timeout for AI processing
+        }
+      );
+
+      console.log('Gemini response:', response.data);
+
+      await incrementScanCount();
+
+      if (!response.data.success) {
         Alert.alert(
           'No Games Detected',
-          'Could not detect any game numbers. Try a clearer photo with better lighting.'
+          response.data.message || 'Could not detect any lottery tickets. Try a clearer photo with better lighting.'
         );
         setProcessing(false);
         return;
       }
 
-      // Fetch game details from backend
-      const userId = await AsyncStorage.getItem('userId');
-      const userState = await AsyncStorage.getItem('userState');
+      const { detected, matchedGames } = response.data;
 
-      // Track the scan
-      await axios.post(`${API_BASE_URL}/scan/track`, {
-        userId,
-        gameIds,
-      });
-
-      await incrementScanCount();
-
-      // Fetch all games and filter by detected IDs
-      const response = await axios.get(`${API_BASE_URL}/games/${userState}`);
-      const allGames = response.data.games || [];
-
-      const matchedGames = allGames.filter(game =>
-        gameIds.includes(game.id) || gameIds.some(id => game.id.includes(id))
-      );
-
-      if (matchedGames.length > 0) {
+      if (matchedGames && matchedGames.length > 0) {
         setDetectedGames(matchedGames);
         Alert.alert(
-          'Games Detected!',
-          `Found ${matchedGames.length} matching games. Scroll down to see recommendations.`
+          '🎉 Games Detected!',
+          `Found ${detected.length} ticket(s) in the image.\nMatched ${matchedGames.length} games in our database.\n\nScroll down to see recommendations sorted by value.`
         );
-      } else {
+      } else if (detected && detected.length > 0) {
         Alert.alert(
-          'No Matches',
-          `Detected game numbers: ${gameIds.join(', ')}\n\nBut couldn\'t find them in our database. They may be out of date.`
+          'Tickets Detected',
+          `Detected ${detected.length} game(s):\n${detected.map(g => `#${g.gameNumber} - ${g.gameName}`).join('\n')}\n\nBut couldn't find them in our database. They may be discontinued or from another state.`
         );
       }
+
     } catch (error) {
       console.error('Error processing image:', error);
-      Alert.alert(
-        'Processing Error',
-        'Failed to process the image. Please try again.'
-      );
+
+      let errorMessage = 'Failed to process the image. ';
+
+      if (error.response?.status === 429) {
+        errorMessage = error.response.data.message || 'Scan limit reached. Upgrade to Pro for unlimited scans!';
+      } else if (error.code === 'ECONNABORTED') {
+        errorMessage = 'Request timed out. The AI service may be busy. Try again in a moment.';
+      } else if (error.response?.data?.error) {
+        errorMessage += error.response.data.error;
+      } else if (error.message) {
+        errorMessage += error.message;
+      } else {
+        errorMessage += 'Please try again with a clearer photo.';
+      }
+
+      Alert.alert('Processing Error', errorMessage);
     } finally {
       setProcessing(false);
     }
@@ -299,8 +313,8 @@ export default function ScanScreen({ navigation }) {
         {processing && (
           <View style={styles.processingContainer}>
             <ActivityIndicator size="large" color="#4CAF50" />
-            <Text style={styles.processingText}>Processing image with OCR...</Text>
-            <Text style={styles.processingSubtext}>This may take a few seconds</Text>
+            <Text style={styles.processingText}>Analyzing with Gemini 2.0 Flash...</Text>
+            <Text style={styles.processingSubtext}>AI is recognizing lottery tickets</Text>
           </View>
         )}
 

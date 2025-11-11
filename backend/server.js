@@ -9,6 +9,26 @@ const cors = require('cors');
 const cron = require('node-cron');
 const NCLotteryScraper = require('./services/scraper');
 const database = require('./services/database');
+const gemini = require('./services/gemini');
+const multer = require('multer');
+const path = require('path');
+
+// Configure multer for image uploads
+const upload = multer({
+  dest: 'uploads/',
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Only image files (JPEG, JPG, PNG) are allowed'));
+    }
+  }
+});
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -163,6 +183,90 @@ app.get('/api/hot/:state', async (req, res) => {
 });
 
 /**
+ * Scan lottery ticket image with Gemini AI
+ */
+app.post('/api/scan/image', upload.single('image'), async (req, res) => {
+  try {
+    const { userId, state } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId required' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file provided' });
+    }
+
+    // Check daily scan limit
+    const scanCount = await database.getUserScanCount(userId);
+    const freeLimit = parseInt(process.env.FREE_TIER_SCANS) || 3;
+
+    if (scanCount >= freeLimit) {
+      // Clean up uploaded file
+      const fs = require('fs');
+      fs.unlinkSync(req.file.path);
+
+      return res.status(429).json({
+        error: 'Scan limit reached',
+        message: 'Upgrade to Pro for unlimited scans',
+        scansUsed: scanCount,
+        limit: freeLimit
+      });
+    }
+
+    // Analyze image with Gemini
+    console.log(`Analyzing image for user ${userId}...`);
+    const result = await gemini.recognizeLotteryTickets(req.file.path);
+
+    // Clean up uploaded file
+    const fs = require('fs');
+    fs.unlinkSync(req.file.path);
+
+    if (!result.games || result.games.length === 0) {
+      return res.json({
+        success: false,
+        message: 'No lottery tickets detected in image',
+        games: [],
+        scansUsed: scanCount,
+        scansRemaining: freeLimit - scanCount
+      });
+    }
+
+    // Extract game IDs
+    const gameIds = result.games.map(g => g.gameNumber).filter(Boolean);
+
+    // Track the scan
+    await database.trackUserScan(userId, gameIds);
+
+    // Fetch matching games from database
+    const allGames = await database.getGames(state || 'nc', {});
+    const matchedGames = allGames.filter(game =>
+      gameIds.includes(game.id) ||
+      gameIds.some(id => game.id.includes(id) || game.name.toLowerCase().includes(result.games.find(g => g.gameNumber === id)?.gameName.toLowerCase()))
+    );
+
+    res.json({
+      success: true,
+      detected: result.games,
+      matchedGames,
+      scansUsed: scanCount + 1,
+      scansRemaining: freeLimit - scanCount - 1
+    });
+
+  } catch (error) {
+    console.error('Error in /api/scan/image:', error);
+
+    // Clean up file on error
+    if (req.file) {
+      const fs = require('fs');
+      try { fs.unlinkSync(req.file.path); } catch (e) {}
+    }
+
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * Track user scan (for free tier limits)
  */
 app.post('/api/scan/track', async (req, res) => {
@@ -209,9 +313,10 @@ app.post('/api/admin/scrape', async (req, res) => {
     console.log('Manual scrape triggered');
 
     // Run scrape
-    const scraper = new NCLotteryScraper(process.env.BROWSERBASE_API_KEY, {
+    const scraper = new NCLotteryScraper({
       maxGames: process.env.MAX_GAMES_PER_SCRAPE || 20,
-      scrapeDelay: process.env.SCRAPE_DELAY_MS || 2000
+      scrapeDelay: process.env.SCRAPE_DELAY_MS || 2000,
+      headless: true
     });
 
     const results = await scraper.scrapeAllGames();
@@ -241,9 +346,10 @@ cron.schedule('0 2 * * *', async () => {
   console.log('\n=== Starting scheduled scrape ===');
 
   try {
-    const scraper = new NCLotteryScraper(process.env.BROWSERBASE_API_KEY, {
+    const scraper = new NCLotteryScraper({
       maxGames: process.env.MAX_GAMES_PER_SCRAPE || 20,
-      scrapeDelay: process.env.SCRAPE_DELAY_MS || 2000
+      scrapeDelay: process.env.SCRAPE_DELAY_MS || 2000,
+      headless: true
     });
 
     const results = await scraper.scrapeAllGames();
@@ -287,8 +393,9 @@ app.listen(PORT, async () => {
   if (process.env.SCRAPE_ON_STARTUP === 'true') {
     console.log('\n📡 Running initial scrape...');
     try {
-      const scraper = new NCLotteryScraper(process.env.BROWSERBASE_API_KEY, {
-        maxGames: process.env.MAX_GAMES_PER_SCRAPE || 20
+      const scraper = new NCLotteryScraper({
+        maxGames: process.env.MAX_GAMES_PER_SCRAPE || 20,
+        headless: true
       });
 
       const results = await scraper.scrapeAllGames();
