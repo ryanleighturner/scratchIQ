@@ -14,6 +14,9 @@ import {
   Alert,
   ActivityIndicator,
   Image,
+  Modal,
+  ScrollView,
+  TextInput,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
@@ -26,6 +29,8 @@ export default function HomeScreen({ navigation }) {
   const [selectedBudget, setSelectedBudget] = useState(null);
   const [userState, setUserState] = useState('nc');
   const [showHotOnly, setShowHotOnly] = useState(false);
+  const [showGamePicker, setShowGamePicker] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     loadUserState();
@@ -130,6 +135,77 @@ export default function HomeScreen({ navigation }) {
     </TouchableOpacity>
   );
 
+  const handleGameSelect = (game) => {
+    setShowGamePicker(false);
+    setSearchQuery('');
+    navigation.navigate('Detail', { game });
+  };
+
+  const filteredGames = games.filter(game =>
+    game.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const renderGamePicker = () => (
+    <Modal
+      visible={showGamePicker}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={() => setShowGamePicker(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Select a Game</Text>
+            <TouchableOpacity
+              onPress={() => {
+                setShowGamePicker(false);
+                setSearchQuery('');
+              }}
+              style={styles.modalCloseButton}
+            >
+              <Text style={styles.modalCloseText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search games..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+
+          <ScrollView style={styles.gamesPickerList}>
+            {filteredGames.length > 0 ? (
+              filteredGames.map((game) => (
+                <TouchableOpacity
+                  key={game.id}
+                  style={styles.gamePickerItem}
+                  onPress={() => handleGameSelect(game)}
+                >
+                  <View style={styles.gamePickerLeft}>
+                    <Text style={styles.gamePickerName}>{game.name}</Text>
+                    <View style={styles.gamePickerMeta}>
+                      <Text style={styles.gamePickerPrice}>${parseFloat(game.price).toFixed(2)}</Text>
+                      <Text style={styles.gamePickerEV}>EV: {(game.ev * 100).toFixed(1)}%</Text>
+                      {game.is_hot && <Text style={styles.gamePickerHot}>🔥</Text>}
+                    </View>
+                  </View>
+                  <Text style={styles.gamePickerArrow}>→</Text>
+                </TouchableOpacity>
+              ))
+            ) : (
+              <View style={styles.noResultsContainer}>
+                <Text style={styles.noResultsText}>No games found</Text>
+              </View>
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+
   const renderGameCard = ({ item }) => {
     const evPercentage = (item.ev * 100).toFixed(1);
     const isGoodValue = item.ev >= 0.7;
@@ -229,6 +305,18 @@ export default function HomeScreen({ navigation }) {
         <Text style={styles.scanButtonText}>📸 Scan Ticket Wall</Text>
       </TouchableOpacity>
 
+      {/* Quick Jump Dropdown */}
+      <TouchableOpacity
+        style={styles.quickJumpButton}
+        onPress={() => setShowGamePicker(true)}
+      >
+        <Text style={styles.quickJumpText}>🎯 Quick Jump to Game</Text>
+        <Text style={styles.quickJumpSubtext}>Select from {games.length} games</Text>
+      </TouchableOpacity>
+
+      {/* Game Picker Modal */}
+      {renderGamePicker()}
+
       {/* Filters */}
       {renderBudgetFilter()}
       {renderHotFilter()}
@@ -282,6 +370,7 @@ const styles = StyleSheet.create({
   scanButton: {
     backgroundColor: '#2196F3',
     margin: 15,
+    marginBottom: 10,
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
@@ -290,6 +379,127 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  quickJumpButton: {
+    backgroundColor: '#fff',
+    marginHorizontal: 15,
+    marginBottom: 10,
+    padding: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#9C27B0',
+    borderStyle: 'dashed',
+  },
+  quickJumpText: {
+    color: '#9C27B0',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  quickJumpSubtext: {
+    color: '#9C27B0',
+    fontSize: 12,
+    marginTop: 4,
+    opacity: 0.8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+    paddingBottom: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  modalCloseButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f0f0f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCloseText: {
+    fontSize: 20,
+    color: '#666',
+  },
+  searchInput: {
+    margin: 15,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    fontSize: 16,
+    backgroundColor: '#f9f9f9',
+  },
+  gamesPickerList: {
+    paddingHorizontal: 15,
+  },
+  gamePickerItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  gamePickerLeft: {
+    flex: 1,
+  },
+  gamePickerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 6,
+  },
+  gamePickerMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  gamePickerPrice: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#4CAF50',
+  },
+  gamePickerEV: {
+    fontSize: 13,
+    color: '#666',
+  },
+  gamePickerHot: {
+    fontSize: 14,
+  },
+  gamePickerArrow: {
+    fontSize: 20,
+    color: '#2196F3',
+    marginLeft: 10,
+  },
+  noResultsContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  noResultsText: {
+    fontSize: 16,
+    color: '#999',
   },
   filterContainer: {
     backgroundColor: '#fff',
