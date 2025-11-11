@@ -5,7 +5,14 @@
 
 require('dotenv').config();
 const { chromium } = require('playwright');
-const { calculateEV, getTopPrizeInfo, isHotTicket, calculateValueScore } = require('../utils/evCalculator');
+const {
+  calculateEV,
+  getTopPrizeInfo,
+  isHotTicket,
+  calculateValueScore,
+  calculateOverallWinProbability,
+  calculateAdjustedTopPrizeProbability
+} = require('../utils/evCalculator');
 
 class NCLotteryScraper {
   constructor(options = {}) {
@@ -170,9 +177,47 @@ class NCLotteryScraper {
           }
         });
 
-        // Get odds info
-        const oddsEl = document.querySelector('[class*="odds"], .game-odds, .overall-odds');
-        const oddsInfo = oddsEl ? oddsEl.textContent.trim() : null;
+        // Get odds info - try multiple selectors for overall odds
+        let oddsInfo = null;
+        let overallOdds = null;
+
+        const oddsSelectors = [
+          '[class*="overall-odds"]',
+          '[class*="odds"]',
+          '.game-odds',
+          '*:has-text("Overall Odds")',
+          '*:has-text("Odds of Winning")'
+        ];
+
+        for (const selector of oddsSelectors) {
+          try {
+            const oddsEl = document.querySelector(selector);
+            if (oddsEl) {
+              const text = oddsEl.textContent.trim();
+
+              // Look for "1 in X" pattern
+              const match = text.match(/1\s+in\s+([\d.]+)/i);
+              if (match) {
+                overallOdds = `1 in ${match[1]}`;
+                oddsInfo = text;
+                break;
+              } else if (text.includes('odds') || text.includes('Odds')) {
+                oddsInfo = text;
+              }
+            }
+          } catch (e) {
+            // Continue to next selector
+          }
+        }
+
+        // Fallback: search all text for overall odds pattern
+        if (!overallOdds) {
+          const bodyText = document.body.textContent;
+          const match = bodyText.match(/overall\s+odds[:\s]+1\s+in\s+([\d.]+)/i);
+          if (match) {
+            overallOdds = `1 in ${match[1]}`;
+          }
+        }
 
         // Get ticket image (might be larger/better quality on detail page)
         const detailImageEl = document.querySelector('.ticket-image, .game-detail-image, img[class*="ticket"], img[alt*="ticket"]');
@@ -184,14 +229,14 @@ class NCLotteryScraper {
           }
         }
 
-        return { prizes, oddsInfo, imageUrl };
+        return { prizes, oddsInfo, overallOdds, imageUrl };
       });
 
       return pageData;
 
     } catch (error) {
       console.error(`Error scraping prize data for ${gameUrl}:`, error.message);
-      return { prizes: [], oddsInfo: null, imageUrl: null };
+      return { prizes: [], oddsInfo: null, overallOdds: null, imageUrl: null };
     }
   }
 
@@ -231,7 +276,7 @@ class NCLotteryScraper {
         const game = games[i];
         console.log(`Scraping ${i + 1}/${games.length}: ${game.name}`);
 
-        const { prizes, oddsInfo, imageUrl } = await this.scrapePrizeData(page, game.url);
+        const { prizes, oddsInfo, overallOdds, imageUrl } = await this.scrapePrizeData(page, game.url);
 
         if (prizes.length > 0) {
           // Calculate EV and other metrics
@@ -241,6 +286,10 @@ class NCLotteryScraper {
           const hot = isHotTicket(ev);
           const valueScore = calculateValueScore(ev, topPrizeInfo, price);
 
+          // Calculate new metrics
+          const overallWinProb = calculateOverallWinProbability(overallOdds);
+          const adjustedTopPrize = calculateAdjustedTopPrizeProbability(prizes);
+
           // Use detail page image if available, otherwise use listing image
           const finalImageUrl = imageUrl || game.image_url;
 
@@ -249,9 +298,16 @@ class NCLotteryScraper {
             image_url: finalImageUrl, // Ensure we have the best image URL
             prizes,
             odds_info: oddsInfo,
+            overall_odds: overallOdds,
+            overall_win_probability: overallWinProb.probability,
+            overall_win_percentage: overallWinProb.percentage,
             ev,
             top_prize_amount: topPrizeInfo.amount,
             top_prize_remaining: topPrizeInfo.remaining,
+            adjusted_top_prize_odds: adjustedTopPrize.adjustedOdds,
+            adjusted_probability: adjustedTopPrize.adjustedProbability,
+            claim_rate: adjustedTopPrize.claimRate,
+            estimated_remaining_tickets: adjustedTopPrize.estimatedRemainingTickets,
             is_hot: hot,
             value_score: valueScore,
             scraped_at: new Date().toISOString(),

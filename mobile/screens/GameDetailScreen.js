@@ -176,6 +176,29 @@ export default function GameDetailScreen({ route, navigation }) {
           </View>
         </View>
 
+        {/* New Analytics Metrics */}
+        <View style={styles.metricRow}>
+          <View style={styles.metric}>
+            <Text style={styles.metricLabel}>Win Any Prize</Text>
+            <Text style={styles.metricValue}>
+              {game.overall_win_percentage || 'N/A'}
+            </Text>
+            <Text style={styles.metricSubtext}>
+              {game.overall_odds || 'overall odds'}
+            </Text>
+          </View>
+
+          <View style={styles.metric}>
+            <Text style={styles.metricLabel}>Adjusted Top Prize</Text>
+            <Text style={styles.metricValue}>
+              {game.adjusted_top_prize_odds || 'N/A'}
+            </Text>
+            <Text style={styles.metricSubtext}>
+              {game.claim_rate ? `${(game.claim_rate * 100).toFixed(1)}% claimed` : 'live odds'}
+            </Text>
+          </View>
+        </View>
+
         {/* EV Interpretation */}
         <View style={styles.interpretationBox}>
           <Text style={styles.interpretationTitle}>💡 What This Means:</Text>
@@ -220,6 +243,40 @@ export default function GameDetailScreen({ route, navigation }) {
                   : `Show All ${game.prizes.length} Prizes ▼`}
               </Text>
             </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* Analytics Explanation */}
+      {(game.overall_win_percentage || game.adjusted_top_prize_odds) && (
+        <View style={styles.analyticsCard}>
+          <Text style={styles.cardTitle}>📊 Advanced Analytics</Text>
+
+          {game.overall_win_percentage && (
+            <View style={styles.analyticsSection}>
+              <Text style={styles.analyticsLabel}>Win Any Prize:</Text>
+              <Text style={styles.analyticsText}>
+                {game.overall_win_percentage} chance to win something. Lower odds = higher win frequency.
+              </Text>
+            </View>
+          )}
+
+          {game.adjusted_top_prize_odds && (
+            <View style={styles.analyticsSection}>
+              <Text style={styles.analyticsLabel}>Adjusted Top Prize Odds:</Text>
+              <Text style={styles.analyticsText}>
+                {game.adjusted_top_prize_odds} to win the top prize, accounting for {game.claim_rate ? (game.claim_rate * 100).toFixed(0) : 0}% of tickets already claimed. Your real odds improve as tickets are sold!
+              </Text>
+            </View>
+          )}
+
+          {game.estimated_remaining_tickets && (
+            <View style={styles.analyticsSection}>
+              <Text style={styles.analyticsLabel}>Est. Remaining Tickets:</Text>
+              <Text style={styles.analyticsText}>
+                ~{game.estimated_remaining_tickets.toLocaleString()} tickets left in circulation
+              </Text>
+            </View>
           )}
         </View>
       )}
@@ -465,6 +522,32 @@ const styles = StyleSheet.create({
     color: '#2196F3',
     fontSize: 14,
     fontWeight: '600',
+  },
+  analyticsCard: {
+    backgroundColor: '#fff',
+    margin: 15,
+    marginTop: 0,
+    padding: 20,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  analyticsSection: {
+    marginBottom: 16,
+  },
+  analyticsLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2196F3',
+    marginBottom: 6,
+  },
+  analyticsText: {
+    fontSize: 13,
+    color: '#666',
+    lineHeight: 20,
   },
   disclaimerCard: {
     backgroundColor: '#fff9e6',

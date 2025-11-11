@@ -34,6 +34,15 @@ class DatabaseService {
         value_score: game.value_score,
         odds_info: game.odds_info,
         url: game.url,
+        image_url: game.image_url,
+        // New metrics
+        overall_odds: game.overall_odds,
+        overall_win_probability: game.overall_win_probability,
+        overall_win_percentage: game.overall_win_percentage,
+        adjusted_top_prize_odds: game.adjusted_top_prize_odds,
+        adjusted_probability: game.adjusted_probability,
+        claim_rate: game.claim_rate,
+        estimated_remaining_tickets: game.estimated_remaining_tickets,
         updated_at: game.scraped_at || new Date().toISOString()
       }));
 
