@@ -8,6 +8,8 @@ const express = require('express');
 const cors = require('cors');
 const cron = require('node-cron');
 const NCLotteryScraper = require('./services/scraper');
+const PALotteryScraper = require('./services/paScraper');
+const MDLotteryScraper = require('./services/mdScraper');
 const database = require('./services/database');
 const gemini = require('./services/gemini');
 const multer = require('multer');
@@ -32,6 +34,41 @@ const upload = multer({
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Supported states and their scrapers
+const SUPPORTED_STATES = ['nc', 'pa', 'md'];
+
+/**
+ * Get the appropriate scraper for a given state
+ */
+function getScraper(state, options = {}) {
+  const stateCode = state.toLowerCase();
+
+  const defaultOptions = {
+    maxGames: process.env.MAX_GAMES_PER_SCRAPE || 50,
+    scrapeDelay: process.env.SCRAPE_DELAY_MS || 2000,
+    headless: true,
+    ...options
+  };
+
+  switch (stateCode) {
+    case 'nc':
+      return new NCLotteryScraper(defaultOptions);
+    case 'pa':
+      return new PALotteryScraper(defaultOptions);
+    case 'md':
+      return new MDLotteryScraper(defaultOptions);
+    default:
+      throw new Error(`Unsupported state: ${state}`);
+  }
+}
+
+/**
+ * Validate state parameter
+ */
+function isValidState(state) {
+  return SUPPORTED_STATES.includes(state.toLowerCase());
+}
 
 // Middleware
 app.use(cors());
@@ -66,11 +103,11 @@ app.get('/api/games/:state', async (req, res) => {
   try {
     const { state } = req.params;
 
-    // Validate state (only NC supported in MVP)
-    if (state.toLowerCase() !== 'nc') {
+    // Validate state
+    if (!isValidState(state)) {
       return res.status(400).json({
         error: 'Invalid state',
-        message: 'Only NC (North Carolina) is supported in MVP'
+        message: `Supported states: ${SUPPORTED_STATES.map(s => s.toUpperCase()).join(', ')}`
       });
     }
 
@@ -102,10 +139,10 @@ app.get('/api/games/:state/budget/:budget', async (req, res) => {
   try {
     const { state, budget } = req.params;
 
-    if (state.toLowerCase() !== 'nc') {
+    if (!isValidState(state)) {
       return res.status(400).json({
         error: 'Invalid state',
-        message: 'Only NC is supported in MVP'
+        message: `Supported states: ${SUPPORTED_STATES.map(s => s.toUpperCase()).join(', ')}`
       });
     }
 
@@ -163,8 +200,11 @@ app.get('/api/hot/:state', async (req, res) => {
     const { state } = req.params;
     const limit = parseInt(req.query.limit) || 10;
 
-    if (state.toLowerCase() !== 'nc') {
-      return res.status(400).json({ error: 'Only NC is supported in MVP' });
+    if (!isValidState(state)) {
+      return res.status(400).json({
+        error: 'Invalid state',
+        message: `Supported states: ${SUPPORTED_STATES.map(s => s.toUpperCase()).join(', ')}`
+      });
     }
 
     const hotTickets = await database.getHotTickets(state.toLowerCase(), limit);
@@ -307,27 +347,58 @@ app.post('/api/scan/track', async (req, res) => {
 
 /**
  * Manual scrape trigger (admin only - add auth in production)
+ * Query params: state (optional - defaults to all states)
  */
 app.post('/api/admin/scrape', async (req, res) => {
   try {
-    console.log('Manual scrape triggered');
+    const { state } = req.query;
 
-    // Run scrape
-    const scraper = new NCLotteryScraper({
-      maxGames: process.env.MAX_GAMES_PER_SCRAPE || 20,
-      scrapeDelay: process.env.SCRAPE_DELAY_MS || 2000,
-      headless: true
-    });
+    // If state specified, validate it
+    if (state && !isValidState(state)) {
+      return res.status(400).json({
+        error: 'Invalid state',
+        message: `Supported states: ${SUPPORTED_STATES.map(s => s.toUpperCase()).join(', ')}`
+      });
+    }
 
-    const results = await scraper.scrapeAllGames();
+    // Determine which states to scrape
+    const statesToScrape = state ? [state.toLowerCase()] : SUPPORTED_STATES;
+    console.log(`Manual scrape triggered for: ${statesToScrape.join(', ').toUpperCase()}`);
 
-    if (results.length > 0) {
-      await database.upsertGames(results);
+    const results = [];
+
+    // Scrape each state
+    for (const stateCode of statesToScrape) {
+      try {
+        console.log(`\nScraping ${stateCode.toUpperCase()}...`);
+        const scraper = getScraper(stateCode);
+        const stateResults = await scraper.scrapeAllGames();
+
+        if (stateResults.length > 0) {
+          await database.upsertGames(stateResults);
+          results.push({
+            state: stateCode.toUpperCase(),
+            gamesScraped: stateResults.length
+          });
+        } else {
+          results.push({
+            state: stateCode.toUpperCase(),
+            gamesScraped: 0,
+            warning: 'No games found'
+          });
+        }
+      } catch (error) {
+        console.error(`Error scraping ${stateCode.toUpperCase()}:`, error.message);
+        results.push({
+          state: stateCode.toUpperCase(),
+          error: error.message
+        });
+      }
     }
 
     res.json({
       success: true,
-      gamesScraped: results.length,
+      results,
       timestamp: new Date().toISOString()
     });
 
@@ -341,29 +412,30 @@ app.post('/api/admin/scrape', async (req, res) => {
 
 /**
  * Daily scrape job - runs at 2 AM
+ * Scrapes all supported states
  */
 cron.schedule('0 2 * * *', async () => {
-  console.log('\n=== Starting scheduled scrape ===');
+  console.log('\n=== Starting scheduled scrape for all states ===');
 
-  try {
-    const scraper = new NCLotteryScraper({
-      maxGames: process.env.MAX_GAMES_PER_SCRAPE || 20,
-      scrapeDelay: process.env.SCRAPE_DELAY_MS || 2000,
-      headless: true
-    });
+  for (const stateCode of SUPPORTED_STATES) {
+    try {
+      console.log(`\n--- Scraping ${stateCode.toUpperCase()} ---`);
+      const scraper = getScraper(stateCode);
+      const results = await scraper.scrapeAllGames();
 
-    const results = await scraper.scrapeAllGames();
+      if (results.length > 0) {
+        await database.upsertGames(results);
+        console.log(`✓ ${stateCode.toUpperCase()} scrape completed: ${results.length} games updated`);
+      } else {
+        console.log(`⚠ ${stateCode.toUpperCase()} scrape returned no results`);
+      }
 
-    if (results.length > 0) {
-      await database.upsertGames(results);
-      console.log(`✓ Scheduled scrape completed: ${results.length} games updated`);
-    } else {
-      console.log('⚠ Scheduled scrape returned no results');
+    } catch (error) {
+      console.error(`✗ ${stateCode.toUpperCase()} scrape failed:`, error.message);
     }
-
-  } catch (error) {
-    console.error('✗ Scheduled scrape failed:', error.message);
   }
+
+  console.log('\n=== Scheduled scrape completed ===');
 });
 
 // ==================== ERROR HANDLING ====================
@@ -391,20 +463,21 @@ app.listen(PORT, async () => {
 
   // Run initial scrape on startup (optional)
   if (process.env.SCRAPE_ON_STARTUP === 'true') {
-    console.log('\n📡 Running initial scrape...');
-    try {
-      const scraper = new NCLotteryScraper({
-        maxGames: process.env.MAX_GAMES_PER_SCRAPE || 20,
-        headless: true
-      });
+    console.log('\n📡 Running initial scrape for all states...');
 
-      const results = await scraper.scrapeAllGames();
+    for (const stateCode of SUPPORTED_STATES) {
+      try {
+        console.log(`\nScraping ${stateCode.toUpperCase()}...`);
+        const scraper = getScraper(stateCode);
+        const results = await scraper.scrapeAllGames();
 
-      if (results.length > 0) {
-        await database.upsertGames(results);
+        if (results.length > 0) {
+          await database.upsertGames(results);
+          console.log(`✓ ${stateCode.toUpperCase()}: ${results.length} games`);
+        }
+      } catch (error) {
+        console.error(`✗ ${stateCode.toUpperCase()} failed:`, error.message);
       }
-    } catch (error) {
-      console.error('Initial scrape failed:', error.message);
     }
   }
 
