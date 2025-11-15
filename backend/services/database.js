@@ -238,6 +238,68 @@ class DatabaseService {
   }
 
   /**
+   * Delete games by IDs
+   */
+  async deleteGamesByIds(gameIds) {
+    try {
+      // Delete prizes first
+      const { error: prizesError } = await this.supabase
+        .from('prizes')
+        .delete()
+        .in('game_id', gameIds);
+
+      if (prizesError) throw prizesError;
+
+      // Delete games
+      const { error: gamesError } = await this.supabase
+        .from('games')
+        .delete()
+        .in('id', gameIds);
+
+      if (gamesError) throw gamesError;
+
+      console.log(`✓ Deleted ${gameIds.length} game(s) and their prizes`);
+      return true;
+    } catch (error) {
+      console.error('Error deleting games:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete games by name patterns (case-insensitive)
+   */
+  async deleteGamesByName(state, namePatterns) {
+    try {
+      // Get all games for the state
+      const allGames = await this.getGames(state, {});
+
+      // Find games matching any of the name patterns
+      const gamesToDelete = allGames.filter(game =>
+        namePatterns.some(pattern =>
+          game.name.toLowerCase().includes(pattern.toLowerCase())
+        )
+      );
+
+      if (gamesToDelete.length === 0) {
+        console.log('No games found matching the provided names');
+        return { deleted: 0, games: [] };
+      }
+
+      const gameIds = gamesToDelete.map(g => g.id);
+      await this.deleteGamesByIds(gameIds);
+
+      return {
+        deleted: gamesToDelete.length,
+        games: gamesToDelete.map(g => ({ id: g.id, name: g.name }))
+      };
+    } catch (error) {
+      console.error('Error deleting games by name:', error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Check database health
    */
   async healthCheck() {

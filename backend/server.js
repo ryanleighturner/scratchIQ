@@ -346,6 +346,43 @@ app.post('/api/scan/track', async (req, res) => {
 });
 
 /**
+ * Delete games by name (admin only - add auth in production)
+ * Body: { state: 'nc', names: ['Game Name 1', 'Game Name 2'] }
+ */
+app.delete('/api/admin/games', async (req, res) => {
+  try {
+    const { state, names } = req.body;
+
+    if (!state || !names || !Array.isArray(names)) {
+      return res.status(400).json({
+        error: 'Invalid request',
+        message: 'Request body must include state and names array'
+      });
+    }
+
+    if (!isValidState(state)) {
+      return res.status(400).json({
+        error: 'Invalid state',
+        message: `Supported states: ${SUPPORTED_STATES.map(s => s.toUpperCase()).join(', ')}`
+      });
+    }
+
+    const result = await database.deleteGamesByName(state.toLowerCase(), names);
+
+    res.json({
+      success: true,
+      deleted: result.deleted,
+      games: result.games,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error deleting games:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * Manual scrape trigger (admin only - add auth in production)
  * Query params: state (optional - defaults to all states)
  */
