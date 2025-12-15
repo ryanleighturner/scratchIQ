@@ -2,54 +2,76 @@
   "expo": {
     "name": "ScratchIQ",
     "slug": "scratchiq",
+    "scheme": "scratchiq",
     "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "orientation": "default",
     "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "runtimeVersion": "1.0.0",
+    "icon": "./assets/app-icon.png",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/app-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "extra": {
+      "eas": {
+        "projectId": "a1b2c3d4-e5f6-47a8-9b1c-2d3e4f5a6b7c"
+      }
+    },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.scratchiq.app",
+      "buildNumber": "2",
+      "icon": "./assets/app-icon.png",
       "infoPlist": {
-        "NSCameraUsageDescription": "ScratchIQ needs camera access to scan lottery ticket walls.",
-        "NSPhotoLibraryUsageDescription": "ScratchIQ needs photo library access to select images for scanning."
+        "NSCameraUsageDescription": "ScratchIQ needs camera access to scan lottery ticket displays and identify available games.",
+        "NSPhotoLibraryUsageDescription": "ScratchIQ needs photo library access to analyze images of lottery ticket displays you've already captured.",
+        "NSUserNotificationsUsageDescription": "ScratchIQ sends notifications when high-value lottery tickets become available in your area.",
+        "ITSAppUsesNonExemptEncryption": false,
+        "LSApplicationQueriesSchemes": [
+          "tiktok",
+          "instagram"
+        ]
+      },
+      "config": {
+        "usesNonExemptEncryption": false
       }
     },
     "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
+      "edgeToEdgeEnabled": true,
       "package": "com.scratchiq.app",
+      "versionCode": 1,
+      "icon": "./assets/app-icon.png",
       "permissions": [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
-        "NOTIFICATIONS"
-      ]
-    },
-    "web": {
-      "favicon": "./assets/favicon.png"
+        "POST_NOTIFICATIONS"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/app-icon.png",
+        "backgroundColor": "#6366f1"
+      }
     },
     "plugins": [
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow ScratchIQ to scan lottery ticket displays"
+          "cameraPermission": "ScratchIQ needs camera access to scan lottery ticket displays and identify available games."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "ScratchIQ needs photo library access to analyze images of lottery ticket displays you've already captured."
         }
       ],
       [
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
-          "color": "#ffffff"
+          "color": "#6366f1"
         }
       ]
     ]
